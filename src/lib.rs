@@ -8,7 +8,7 @@ pub use openzwave::value_classes::value_id::{ CommandClass, ValueID, ValueGenre,
 pub use openzwave::controller::Controller;
 pub use openzwave::node::Node;
 use std::{ fmt, fs };
-use std::collections::{ BTreeSet, HashMap, HashSet };
+use std::collections::{ BTreeSet, HashMap };
 use std::sync::{ Arc, Mutex, MutexGuard };
 use std::sync::mpsc;
 
@@ -34,8 +34,29 @@ fn get_default_device() -> Result<&'static str> {
 }
 
 #[derive(Debug, Clone)]
+pub struct ControllerInfo {
+    last_state: ControllerState,
+    last_error: ControllerError,
+}
+
+impl ControllerInfo {
+    fn new() -> ControllerInfo {
+        ControllerInfo {
+            last_state: ControllerState::Normal,
+            last_error: ControllerError::None,
+        }
+    }
+}
+
+impl fmt::Display for ControllerInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        f.pad(&format!("last_state: {} last_error: {}", self.last_state, self.last_error))
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct State {
-    controllers: HashSet<Controller>,
+    controllers: HashMap<Controller, ControllerInfo>,
     nodes: BTreeSet<Node>,
     nodes_map: HashMap<Controller, BTreeSet<Node>>,
     value_ids: BTreeSet<ValueID>,
@@ -44,15 +65,19 @@ pub struct State {
 impl State {
     fn new() -> State {
         State {
-            controllers: HashSet::new(),
+            controllers: HashMap::new(),
             nodes: BTreeSet::new(),
             nodes_map: HashMap::new(),
             value_ids: BTreeSet::new()
         }
     }
 
-    pub fn get_controllers(&self) -> &HashSet<Controller> {
+    pub fn get_controllers(&self) -> &HashMap<Controller, ControllerInfo> {
         &self.controllers
+    }
+
+    pub fn get_controller_info(&self, controller: &Controller) -> Option<&ControllerInfo> {
+        self.controllers.get(controller)
     }
 
     pub fn get_nodes(&self) -> &BTreeSet<Node> {
@@ -295,9 +320,7 @@ impl manager::NotificationWatcher for ZWaveWatcher {
                 let controller = notification.get_controller();
                 {
                     let mut state = self.get_state();
-                    if !state.controllers.contains(&controller) {
-                        state.controllers.insert(controller);
-                    }
+                    state.controllers.insert(controller, ControllerInfo::new());
                 }
 
                 self.get_channel_sender().send(ZWaveNotification::ControllerReady(controller)).unwrap();
@@ -331,8 +354,10 @@ impl manager::NotificationWatcher for ZWaveWatcher {
             NotificationType::Type_ControllerCommand => {
                 let controller = notification.get_controller();
                 let controller_state_u8 = notification.get_event().unwrap();
+                let mut controller_info = ControllerInfo::new();
                 let zwn;
                 if let Some(controller_state) = ControllerState::from_u8(controller_state_u8) {
+                    controller_info.last_state = controller_state;
                     zwn = match controller_state {
                         ControllerState::Normal       => ZWaveNotification::StateNormal(controller),
                         ControllerState::Starting     => ZWaveNotification::StateStarting(controller),
@@ -347,6 +372,7 @@ impl manager::NotificationWatcher for ZWaveWatcher {
                         ControllerState::Error        => {
                             let controller_error_u8 = notification.get_byte();
                             if let Some(controller_error) = ControllerError::from_u8(controller_error_u8) {
+                                controller_info.last_error = controller_error;
                                 match controller_error {
                                     ControllerError::None           => ZWaveNotification::ErrorNone(controller),
                                     ControllerError::ButtonNotFound => ZWaveNotification::ErrorButtonNotFound(controller),
@@ -369,6 +395,10 @@ impl manager::NotificationWatcher for ZWaveWatcher {
                     };
                 } else {
                     zwn = ZWaveNotification::Generic(format!("Unknown ControllerState: {}", controller_state_u8));
+                }
+                {
+                    let mut state = self.get_state();
+                    state.controllers.insert(controller, controller_info);
                 }
                 self.get_channel_sender().send(zwn).unwrap();
             },

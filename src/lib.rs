@@ -611,6 +611,8 @@ pub fn init(options: &InitOptions) -> Result<(ZWaveManager, mpsc::Receiver<ZWave
 
     let mut ozw_options = try!(options::Options::create(config_path, options.user_path, "--SaveConfiguration true --DumpTriggerLevel 0 --ConsoleOutput false"));
 
+    try!(options::Options::add_option_int(&mut options, "PollInterval", 60000)); //enable polling each 60 seconds
+    try!(options::Options::add_option_bool(&mut options, "IntervalBetweenPolls", true));
     // TODO: The NetworkKey should really be derived from something unique
     //       about the foxbox that we're running on. This particular set of
     //       values happens to be the default that domoticz uses.

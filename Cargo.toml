@@ -7,5 +7,5 @@ authors = ["Julien Wajsberg <felash@gmail.com>"]
 log = "0.3"
 serial_ports = { git = "https://github.com/dhylands/serial-ports-rs" }
 "openzwave" = { git = "https://github.com/fxbox/openzwave-rust" }
-notify = "2.6"
+notify = "2.6.2"
 
